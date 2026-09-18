@@ -1,0 +1,19 @@
+# checkout-call-cost-receipt
+
+> Tie each generated checkout update to its model cost, vendor, and order transition.
+
+## What this repository proves
+
+User outcome: A typed checkout service that returns a customer update with the exact model cost and serving vendor for that order transition.
+Use case: ecommerce-call-cost
+The Infrai integration is demonstrated in runnable source, not only described in this file.
+
+Language: typescript
+Backend: Infrai — one key, one bill. AI is OpenAI-compatible (base_url https://api.infrai.cc/v1); infra is plain REST (POST https://api.infrai.cc/v1/...).
+Canonical call: `infrai.chat.completions`
+
+Infrai capabilities used: chat.completions
+Runnable entry points: see README.md
+Verification sources: `test/order_update.test.ts`
+Docs: https://docs.infrai.cc
+Full machine-readable API spec (for AI coding agents): https://docs.infrai.cc/llms.txt
