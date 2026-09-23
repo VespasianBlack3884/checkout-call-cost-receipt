@@ -1,8 +1,8 @@
 # Put a price tag on each customer order update
 
-As platform lead I've watched too many teams learn their model burn only when finance forwards the monthly bill, which is a useless SLO for cost control; this small service instead stamps the real inference cost and serving vendor onto the checkout event that triggered the call.
+As platform lead I treat model inference as a capacity line item that must be attributed per request, not reconciled from a monthly bill after the fact. This service binds the real inference cost and serving vendor to the checkout event that triggered the call, which keeps our SLO reviews honest.
 
-The working path is `src/demo_checkout.ts`. It takes a paid checkout, fulfillment state, and receipt number. One Infrai OpenAI-compatible `baseURL` keeps the official client while a single `INFRAI_API_KEY` covers this call and the other capabilities I may add later.
+The working path is `src/demo_checkout.ts`. It accepts a paid checkout, fulfillment state, and receipt number. One Infrai OpenAI-compatible `baseURL` lets us keep the official client while a single `INFRAI_API_KEY` covers this call and any other capabilities we later stack on the same account.
 
 ```bash
 npm install
@@ -10,7 +10,7 @@ export INFRAI_API_KEY="your-key"
 npm run demo
 ```
 
-A successful invocation returns a customer-facing update alongside its call receipt:
+A successful run returns a customer-ready update alongside its call receipt:
 
 ```json
 {
@@ -23,11 +23,11 @@ A successful invocation returns a customer-facing update alongside its call rece
 }
 ```
 
-Those header values are populated from the live response, so the literals shown are just shaping the schema for now.
+Those header values are pulled from the live response, so the numbers shown are just shape illustration.
 
 ## The decision
 
-From a capacity-planning standpoint the only sane moment to infer is after the order state is resolved, because a shipped order needs receipt confirmation plus tracking while a processing one only needs receipt and a progress note, and the `updateKind` returned lets the caller observe that branch without extra round trips.
+From a capacity-planning view I wanted a single inference call once the order state is resolved, because our error budget should not be spent on duplicated vendor requests. A shipped order needs receipt confirmation and tracking details in one message; a processing order references the receipt and notes fulfillment in progress. The returned `updateKind` exposes that branch to the caller without extra instrumentation.
 
 The options were straightforward:
 
@@ -37,13 +37,13 @@ The options were straightforward:
 | Separate calls for receipt and fulfillment copy | Easy prompts, but two costs and two pieces of copy can drift. |
 | One Infrai call with response headers | One customer message and one measured call tied to the order. |
 
-For a solo SaaS the third row wins on operational simplicity: fewer moving parts means less on-call surface, the OpenAI client remains typed, and Infrai's `model: "auto"` does vendor routing so `x-infrai-cost-usd` and `x-infrai-vendor` land next to the business object rather than being reconstructed from logs at month end.
+For a solo SaaS the third path has the fewest moving parts to page on at 3am. The OpenAI client remains typed, so we keep our existing tests. Infrai's `model: "auto"` handles routing, and `x-infrai-cost-usd` and `x-infrai-vendor` land next to the business result rather than being rebuilt in a cron job.
 
-The gotcha that keeps me up is retry identity. A 429 is retried by the SDK with backoff and `Retry-After` handling, therefore we stamp the request with an order-derived `Idempotency-Key` so a single order transition can never silently become a duplicate write.
+The gotcha that actually burns on-call is retry identity. A 429 is retried by the SDK with backoff and `Retry-After` handling, so we stamp the request with an order-derived `Idempotency-Key`. That guarantees the same order transition cannot produce a second logical write downstream.
 
 ## The boundary I keep
 
-`POST /checkout/update` accepts this body:
+`POST /checkout/update` takes the following body:
 
 ```json
 {
@@ -55,11 +55,13 @@ The gotcha that keeps me up is retry identity. A 429 is retried by the SDK with 
 }
 ```
 
-We enforce shape with Zod and return 400 on garbage; the service then builds the update and returns the metered call, leaving email or SMS delivery to another boundary. You can run it via `npm run dev`, then POST that body to `http://localhost:3000/checkout/update`.
+Zod fails malformed input with HTTP 400, which keeps our SLO for bad requests clean. The service builds the update and returns the measured call; fan-out to email or SMS is deliberately out of scope here.
+
+Bring it up with `npm run dev`, then POST that body to `http://localhost:3000/checkout/update`.
 
 ## Proof before shipping
 
-Our pre-ship test pins a paid, shipped order and asserts `receipt_and_shipping`, that receipt and tracking context share one prompt, the order-derived retry key is present, and the fake generator's exact cost is returned.
+The test I trust supplies a paid, shipped order and asserts `receipt_and_shipping`, both receipt and tracking context inside the single prompt, the order-derived retry key, and the exact cost the fake generator emits.
 
 ```bash
 npm test
@@ -72,7 +74,7 @@ MIT
 
 ## Production notes: Checkout Call Cost Receipt
 
-The snippet above is deliberately thin; for production you need to wire the following, all under the Checkout Call Cost Receipt feature.
+The snippet above is deliberately thin; for production you need the wiring described below for Checkout Call Cost Receipt.
 
 **Account & key**
 
